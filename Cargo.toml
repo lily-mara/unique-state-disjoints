@@ -1,0 +1,7 @@
+[package]
+name = "state-dict"
+version = "0.1.0"
+authors = ["Nate Mara <natemara@gmail.com>"]
+
+[dependencies]
+scoped_threadpool = "*"
