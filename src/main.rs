@@ -42,6 +42,7 @@ fn merge_disjoints<'a>(disjoints: &CharsetComparisson<'a>) -> CharsetComparisson
         disjoint_vec.push(disjoint);
     }
 
+    disjoint_vec.sort_by(|x, y| x.1.original.cmp(y.1.original));
     disjoint_vec.into_boxed_slice()
 }
 
@@ -54,24 +55,25 @@ fn find_unique_disjoints_async<'a>(states: &Charset<'a>, disjoints: &CharsetComp
             let state_from_pair = word_pair.1;
             let word_from_pair = word_pair.0;
             let tx = tx.clone();
-            unsafe {
-                scope.execute(move|| {
-                    let mut fail = false;
-                    for state in states.iter() {
-                        if state.original != state_from_pair.original {
-                            if state.chars.is_disjoint(&word_from_pair.chars) {
-                                fail = true;
-                            }
+            scope.execute(move|| {
+                let mut fail = false;
+                for state in states.iter() {
+                    if state.original != state_from_pair.original {
+                        if state.chars.is_disjoint(&word_from_pair.chars) {
+                            fail = true;
                         }
                     }
-                    if !fail {
-                        tx.send((
-                            word_from_pair.clone(),
-                            state_from_pair.clone()
-                        ));
+                }
+                if !fail {
+                    match tx.send((
+                        word_from_pair.clone(),
+                        state_from_pair.clone()
+                    )) {
+                        Ok(()) => {},
+                        Err(e) => panic!("Failed to send between threads: {:?}", e),
                     }
-                });
-            }
+                }
+            });
         }
     });
 
@@ -85,15 +87,16 @@ fn find_disjoint_words_async<'a>(states: &Charset<'a>, words: &Charset<'a>) -> C
     pool.scoped(|scope| {
         for state in states.iter() {
             let tx = tx.clone();
-            unsafe {
-                scope.execute(move|| {
-                    for word in words.iter() {
-                        if word.chars.is_disjoint(&state.chars) {
-                            tx.send(((*word).clone(), (*state).clone())).unwrap();
+            scope.execute(move|| {
+                for word in words.iter() {
+                    if word.chars.is_disjoint(&state.chars) {
+                        match tx.send(((*word).clone(), (*state).clone())) {
+                            Ok(()) => {},
+                            Err(e) => panic!("Failed to send between threads: {:?}", e),
                         }
                     }
-                });
-            }
+                }
+            });
         }
     });
 
