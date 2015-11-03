@@ -1,7 +1,12 @@
 [package]
+authors = ["Nate Mara <natemara@gmail.com>"]
 name = "state-dict"
 version = "0.1.0"
-authors = ["Nate Mara <natemara@gmail.com>"]
+repository = "https://github.com/natemara/unique-state-disjoints"
+homepage = "https://github.com/natemara/unique-state-disjoints"
+license = "MIT"
+readme = "README.md"
+description = "Get all pairs of states and words such that the word has no letters in common with only one state"
 
 [dependencies]
-scoped_threadpool = "*"
+scoped_threadpool = "0.1.6"
