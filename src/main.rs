@@ -3,7 +3,6 @@ extern crate flame;
 
 use std::io::prelude::*;
 use std::fs::File;
-use std::collections::HashSet;
 use std::sync::mpsc::{channel, Receiver};
 use scoped_threadpool::Pool;
 
@@ -19,7 +18,7 @@ struct Comparisson<'a> {
 
 struct CharsetEntry<'a> {
     original: &'a str,
-    chars: HashSet<char>,
+    chars: Vec<char>,
 }
 
 fn main() {
@@ -41,6 +40,18 @@ fn main() {
         println!("{} => {}", state, word);
     }
     flame::dump_html(&mut File::create("flame-graph.html").unwrap()).unwrap();
+}
+
+fn is_disjoint(a: &[char], b: &[char]) -> bool {
+    for i in a {
+        for j in b {
+            if i == j {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 fn merge_disjoints<'a>(disjoints: &Receiver<Comparisson<'a>>) -> CharsetComparissonSync<'a> {
@@ -71,7 +82,7 @@ fn find_unique_disjoints_async<'a>(states: &'a [CharsetEntry<'a>],
                 let mut fail = false;
                 for state in states.iter() {
                     if state.original != state_from_pair.original {
-                        if state.chars.is_disjoint(&word_from_pair.chars) {
+                        if is_disjoint(&state.chars, &word_from_pair.chars) {
                             fail = true;
                             break;
                         }
@@ -103,7 +114,7 @@ fn find_disjoint_words_async<'a>(states: &'a [CharsetEntry<'a>],
             let tx = tx.clone();
             scope.execute(move || {
                 for word in words.iter() {
-                    if word.chars.is_disjoint(&state.chars) {
+                    if is_disjoint(&state.chars, &word.chars) {
                         tx.send(Comparisson {
                                 word: word,
                                 state: state,
@@ -128,10 +139,10 @@ fn generate_list_of_characters<'a>(words: &'a str) -> Vec<CharsetEntry<'a>> {
     };
 
     for word in lines {
-        let mut chars = HashSet::new();
+        let mut chars = Vec::with_capacity(word.chars().count());
         for char in word.chars() {
-            if char != ' ' {
-                chars.insert(char);
+            if char != ' ' && !chars.contains(&char) {
+                chars.push(char);
             }
         }
 
