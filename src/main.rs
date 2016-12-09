@@ -6,9 +6,6 @@ use std::fs::File;
 use std::sync::mpsc::{channel, Receiver};
 use scoped_threadpool::Pool;
 
-type CharsetComparisson<'a> = Receiver<Comparisson<'a>>;
-type CharsetComparissonSync<'a> = Vec<Comparisson<'a>>;
-
 const POOL_SIZE: u32 = 4;
 
 struct Comparisson<'a> {
@@ -42,11 +39,19 @@ fn main() {
     flame::dump_html(&mut File::create("flame-graph.html").unwrap()).unwrap();
 }
 
+/// Determines whether or not two slices of chars are disjoint. For this function to work
+/// correctly, the slices _MUST_ be sorted. If they are not sorted, this function will not work
+/// correctly, as it is optimized for sorted slices.
 fn is_disjoint(a: &[char], b: &[char]) -> bool {
+    let mut skip = 0;
+
     for i in a {
-        for j in b {
+        for (index, j) in b.iter().skip(skip).enumerate() {
             if i == j {
                 return false;
+            }
+            if let std::cmp::Ordering::Less = j.cmp(i) {
+                skip = index;
             }
         }
     }
@@ -54,7 +59,8 @@ fn is_disjoint(a: &[char], b: &[char]) -> bool {
     true
 }
 
-fn merge_disjoints<'a>(disjoints: &Receiver<Comparisson<'a>>) -> CharsetComparissonSync<'a> {
+/// Create a sorted `Vec` of `Comparisson`s from the mpsc `Receiver`.
+fn merge_disjoints<'a>(disjoints: &Receiver<Comparisson<'a>>) -> Vec<Comparisson<'a>> {
     let _guard = flame::start_guard("merge_disjoints");
     let mut disjoint_vec = vec![];
 
@@ -103,7 +109,7 @@ fn find_unique_disjoints_async<'a>(states: &'a [CharsetEntry<'a>],
 
 fn find_disjoint_words_async<'a>(states: &'a [CharsetEntry<'a>],
                                  words: &'a [CharsetEntry<'a>])
-                                 -> CharsetComparisson<'a> {
+                                 -> Receiver<Comparisson<'a>> {
     let _guard = flame::start_guard("find_disjoint_words_async");
     let mut pool = Pool::new(POOL_SIZE);
 
