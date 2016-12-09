@@ -73,6 +73,7 @@ fn find_unique_disjoints_async<'a>(states: &'a [CharsetEntry<'a>],
                     if state.original != state_from_pair.original {
                         if state.chars.is_disjoint(&word_from_pair.chars) {
                             fail = true;
+                            break;
                         }
                     }
                 }
