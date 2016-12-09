@@ -81,11 +81,10 @@ fn find_unique_disjoints_async<'a>(states: &'a [CharsetEntry<'a>],
             scope.execute(move || {
                 let mut fail = false;
                 for state in states.iter() {
-                    if state.original != state_from_pair.original {
-                        if is_disjoint(&state.chars, &word_from_pair.chars) {
-                            fail = true;
-                            break;
-                        }
+                    if state.original != state_from_pair.original &&
+                       is_disjoint(&state.chars, &word_from_pair.chars) {
+                        fail = true;
+                        break;
                     }
                 }
                 if !fail {
@@ -145,6 +144,8 @@ fn generate_list_of_characters<'a>(words: &'a str) -> Vec<CharsetEntry<'a>> {
                 chars.push(char);
             }
         }
+
+        chars.sort();
 
         word_list.push(CharsetEntry {
             original: word,
