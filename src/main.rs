@@ -1,4 +1,5 @@
 extern crate scoped_threadpool;
+extern crate flame;
 
 use std::io::prelude::*;
 use std::fs::File;
@@ -6,7 +7,6 @@ use std::collections::HashSet;
 use std::sync::mpsc::{channel, Receiver};
 use scoped_threadpool::Pool;
 
-type Charset<'a> = Box<[CharsetEntry<'a>]>;
 type CharsetComparisson<'a> = Receiver<Comparisson<'a>>;
 type CharsetComparissonSync<'a> = Vec<Comparisson<'a>>;
 
@@ -23,6 +23,7 @@ struct CharsetEntry<'a> {
 }
 
 fn main() {
+    let _guard = flame::start_guard("main");
     let words = open_word_list("words.txt");
     let word_charset = generate_list_of_characters(&words);
 
@@ -39,9 +40,11 @@ fn main() {
         let state = word_pair.state.original;
         println!("{} => {}", state, word);
     }
+    flame::dump_html(&mut File::create("flame-graph.html").unwrap()).unwrap();
 }
 
-fn merge_disjoints<'a>(disjoints: &CharsetComparisson<'a>) -> CharsetComparissonSync<'a> {
+fn merge_disjoints<'a>(disjoints: &Receiver<Comparisson<'a>>) -> CharsetComparissonSync<'a> {
+    let _guard = flame::start_guard("merge_disjoints");
     let mut disjoint_vec = vec![];
 
     for disjoint in disjoints {
@@ -52,9 +55,10 @@ fn merge_disjoints<'a>(disjoints: &CharsetComparisson<'a>) -> CharsetComparisson
     disjoint_vec
 }
 
-fn find_unique_disjoints_async<'a>(states: &Charset<'a>,
-                                   disjoints: &CharsetComparisson<'a>)
-                                   -> CharsetComparisson<'a> {
+fn find_unique_disjoints_async<'a>(states: &'a [CharsetEntry<'a>],
+                                   disjoints: &Receiver<Comparisson<'a>>)
+                                   -> Receiver<Comparisson<'a>> {
+    let _guard = flame::start_guard("find_unique_disjoints_async");
     let mut pool = Pool::new(POOL_SIZE);
 
     let (tx, rx) = channel();
@@ -73,13 +77,11 @@ fn find_unique_disjoints_async<'a>(states: &Charset<'a>,
                     }
                 }
                 if !fail {
-                    match tx.send(Comparisson {
-                        word: word_from_pair,
-                        state: state_from_pair,
-                    }) {
-                        Ok(()) => {}
-                        Err(e) => panic!("Failed to send between threads: {:?}", e),
-                    }
+                    tx.send(Comparisson {
+                            word: word_from_pair,
+                            state: state_from_pair,
+                        })
+                        .expect("Failed to send between treads");
                 }
             });
         }
@@ -88,9 +90,10 @@ fn find_unique_disjoints_async<'a>(states: &Charset<'a>,
     rx
 }
 
-fn find_disjoint_words_async<'a>(states: &'a Charset<'a>,
-                                 words: &'a Charset<'a>)
+fn find_disjoint_words_async<'a>(states: &'a [CharsetEntry<'a>],
+                                 words: &'a [CharsetEntry<'a>])
                                  -> CharsetComparisson<'a> {
+    let _guard = flame::start_guard("find_disjoint_words_async");
     let mut pool = Pool::new(POOL_SIZE);
 
     let (tx, rx) = channel();
@@ -100,13 +103,11 @@ fn find_disjoint_words_async<'a>(states: &'a Charset<'a>,
             scope.execute(move || {
                 for word in words.iter() {
                     if word.chars.is_disjoint(&state.chars) {
-                        match tx.send(Comparisson {
-                            word: word,
-                            state: state,
-                        }) {
-                            Ok(()) => {}
-                            Err(e) => panic!("Failed to send between threads: {:?}", e),
-                        }
+                        tx.send(Comparisson {
+                                word: word,
+                                state: state,
+                            })
+                            .expect("Failed to send between treads");
                     }
                 }
             });
@@ -116,10 +117,16 @@ fn find_disjoint_words_async<'a>(states: &'a Charset<'a>,
     rx
 }
 
-fn generate_list_of_characters(words: &str) -> Charset {
-    let mut word_list = vec![];
+fn generate_list_of_characters<'a>(words: &'a str) -> Vec<CharsetEntry<'a>> {
+    let _guard = flame::start_guard("generate_list_of_characters");
+    let lines = words.lines();
 
-    for word in words.lines() {
+    let mut word_list = match lines.size_hint() {
+        (lower, Some(upper)) => Vec::with_capacity(upper - lower),
+        _ => Vec::new(),
+    };
+
+    for word in lines {
         let mut chars = HashSet::new();
         for char in word.chars() {
             if char != ' ' {
@@ -133,10 +140,11 @@ fn generate_list_of_characters(words: &str) -> Charset {
         });
     }
 
-    return word_list.into_boxed_slice();
+    word_list
 }
 
 fn open_word_list(filename: &str) -> String {
+    let _guard = flame::start_guard("open_word_list");
     let mut f = match File::open(filename) {
         Ok(f) => f,
         Err(_) => panic!("Unable to open wordlist!"),
