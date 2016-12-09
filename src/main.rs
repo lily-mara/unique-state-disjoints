@@ -7,8 +7,15 @@ use std::sync::mpsc::{channel, Receiver};
 use scoped_threadpool::Pool;
 
 type Charset<'a> = Box<[CharsetEntry<'a>]>;
-type CharsetComparisson<'a> = Receiver<(&'a CharsetEntry<'a>, &'a CharsetEntry<'a>)>;
-type CharsetComparissonSync<'a> = Box<[(&'a CharsetEntry<'a>, &'a CharsetEntry<'a>)]>;
+type CharsetComparisson<'a> = Receiver<Comparisson<'a>>;
+type CharsetComparissonSync<'a> = Vec<Comparisson<'a>>;
+
+const POOL_SIZE: u32 = 4;
+
+struct Comparisson<'a> {
+    word: &'a CharsetEntry<'a>,
+    state: &'a CharsetEntry<'a>,
+}
 
 struct CharsetEntry<'a> {
     original: &'a str,
@@ -28,8 +35,8 @@ fn main() {
     let final_disjoints = merge_disjoints(&unique_disjoints);
 
     for word_pair in final_disjoints.iter() {
-        let word = word_pair.0.original;
-        let state = word_pair.1.original;
+        let word = word_pair.word.original;
+        let state = word_pair.state.original;
         println!("{} => {}", state, word);
     }
 }
@@ -41,20 +48,20 @@ fn merge_disjoints<'a>(disjoints: &CharsetComparisson<'a>) -> CharsetComparisson
         disjoint_vec.push(disjoint);
     }
 
-    disjoint_vec.sort_by(|x, y| x.1.original.cmp(y.1.original));
-    disjoint_vec.into_boxed_slice()
+    disjoint_vec.sort_by(|x, y| x.state.original.cmp(y.state.original));
+    disjoint_vec
 }
 
 fn find_unique_disjoints_async<'a>(states: &Charset<'a>,
                                    disjoints: &CharsetComparisson<'a>)
                                    -> CharsetComparisson<'a> {
-    let mut pool = Pool::new(4);
+    let mut pool = Pool::new(POOL_SIZE);
 
     let (tx, rx) = channel();
     pool.scoped(|scope| {
         for word_pair in disjoints.iter() {
-            let state_from_pair = word_pair.1;
-            let word_from_pair = word_pair.0;
+            let state_from_pair = word_pair.state;
+            let word_from_pair = word_pair.word;
             let tx = tx.clone();
             scope.execute(move || {
                 let mut fail = false;
@@ -66,7 +73,10 @@ fn find_unique_disjoints_async<'a>(states: &Charset<'a>,
                     }
                 }
                 if !fail {
-                    match tx.send((word_from_pair, state_from_pair)) {
+                    match tx.send(Comparisson {
+                        word: word_from_pair,
+                        state: state_from_pair,
+                    }) {
                         Ok(()) => {}
                         Err(e) => panic!("Failed to send between threads: {:?}", e),
                     }
@@ -81,7 +91,7 @@ fn find_unique_disjoints_async<'a>(states: &Charset<'a>,
 fn find_disjoint_words_async<'a>(states: &'a Charset<'a>,
                                  words: &'a Charset<'a>)
                                  -> CharsetComparisson<'a> {
-    let mut pool = Pool::new(4);
+    let mut pool = Pool::new(POOL_SIZE);
 
     let (tx, rx) = channel();
     pool.scoped(|scope| {
@@ -90,7 +100,10 @@ fn find_disjoint_words_async<'a>(states: &'a Charset<'a>,
             scope.execute(move || {
                 for word in words.iter() {
                     if word.chars.is_disjoint(&state.chars) {
-                        match tx.send((word, state)) {
+                        match tx.send(Comparisson {
+                            word: word,
+                            state: state,
+                        }) {
                             Ok(()) => {}
                             Err(e) => panic!("Failed to send between threads: {:?}", e),
                         }
