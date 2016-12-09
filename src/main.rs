@@ -7,13 +7,12 @@ use std::sync::mpsc::{channel, Receiver};
 use scoped_threadpool::Pool;
 
 type Charset<'a> = Box<[CharsetEntry<'a>]>;
-type CharsetComparisson<'a> = Receiver<(CharsetEntry<'a>, CharsetEntry<'a>)>;
-type CharsetComparissonSync<'a> = Box<[(CharsetEntry<'a>, CharsetEntry<'a>)]>;
+type CharsetComparisson<'a> = Receiver<(&'a CharsetEntry<'a>, &'a CharsetEntry<'a>)>;
+type CharsetComparissonSync<'a> = Box<[(&'a CharsetEntry<'a>, &'a CharsetEntry<'a>)]>;
 
-#[derive(Clone)]
 struct CharsetEntry<'a> {
     original: &'a str,
-    chars: HashSet<char>
+    chars: HashSet<char>,
 }
 
 fn main() {
@@ -35,7 +34,7 @@ fn main() {
     }
 }
 
-fn merge_disjoints<'a>(disjoints: &CharsetComparisson<'a>) -> CharsetComparissonSync<'a>{
+fn merge_disjoints<'a>(disjoints: &CharsetComparisson<'a>) -> CharsetComparissonSync<'a> {
     let mut disjoint_vec = vec![];
 
     for disjoint in disjoints {
@@ -46,7 +45,9 @@ fn merge_disjoints<'a>(disjoints: &CharsetComparisson<'a>) -> CharsetComparisson
     disjoint_vec.into_boxed_slice()
 }
 
-fn find_unique_disjoints_async<'a>(states: &Charset<'a>, disjoints: &CharsetComparisson<'a>) -> CharsetComparisson<'a> {
+fn find_unique_disjoints_async<'a>(states: &Charset<'a>,
+                                   disjoints: &CharsetComparisson<'a>)
+                                   -> CharsetComparisson<'a> {
     let mut pool = Pool::new(4);
 
     let (tx, rx) = channel();
@@ -55,7 +56,7 @@ fn find_unique_disjoints_async<'a>(states: &Charset<'a>, disjoints: &CharsetComp
             let state_from_pair = word_pair.1;
             let word_from_pair = word_pair.0;
             let tx = tx.clone();
-            scope.execute(move|| {
+            scope.execute(move || {
                 let mut fail = false;
                 for state in states.iter() {
                     if state.original != state_from_pair.original {
@@ -65,11 +66,8 @@ fn find_unique_disjoints_async<'a>(states: &Charset<'a>, disjoints: &CharsetComp
                     }
                 }
                 if !fail {
-                    match tx.send((
-                        word_from_pair.clone(),
-                        state_from_pair.clone()
-                    )) {
-                        Ok(()) => {},
+                    match tx.send((word_from_pair, state_from_pair)) {
+                        Ok(()) => {}
                         Err(e) => panic!("Failed to send between threads: {:?}", e),
                     }
                 }
@@ -80,18 +78,20 @@ fn find_unique_disjoints_async<'a>(states: &Charset<'a>, disjoints: &CharsetComp
     rx
 }
 
-fn find_disjoint_words_async<'a>(states: &Charset<'a>, words: &Charset<'a>) -> CharsetComparisson<'a> {
+fn find_disjoint_words_async<'a>(states: &'a Charset<'a>,
+                                 words: &'a Charset<'a>)
+                                 -> CharsetComparisson<'a> {
     let mut pool = Pool::new(4);
 
     let (tx, rx) = channel();
     pool.scoped(|scope| {
         for state in states.iter() {
             let tx = tx.clone();
-            scope.execute(move|| {
+            scope.execute(move || {
                 for word in words.iter() {
                     if word.chars.is_disjoint(&state.chars) {
-                        match tx.send(((*word).clone(), (*state).clone())) {
-                            Ok(()) => {},
+                        match tx.send((word, state)) {
+                            Ok(()) => {}
                             Err(e) => panic!("Failed to send between threads: {:?}", e),
                         }
                     }
@@ -114,7 +114,10 @@ fn generate_list_of_characters(words: &str) -> Charset {
             }
         }
 
-        word_list.push(CharsetEntry{original: word, chars: chars});
+        word_list.push(CharsetEntry {
+            original: word,
+            chars: chars,
+        });
     }
 
     return word_list.into_boxed_slice();
@@ -123,14 +126,14 @@ fn generate_list_of_characters(words: &str) -> Charset {
 fn open_word_list(filename: &str) -> String {
     let mut f = match File::open(filename) {
         Ok(f) => f,
-        Err(_) => panic!("Unable to open wordlist!")
+        Err(_) => panic!("Unable to open wordlist!"),
     };
 
     let mut s = String::new();
 
     match f.read_to_string(&mut s) {
-        Ok(_) => {},
-        Err(_) => panic!("Unable to read from wordlist!")
+        Ok(_) => {}
+        Err(_) => panic!("Unable to read from wordlist!"),
     };
 
     s

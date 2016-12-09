@@ -9,4 +9,4 @@ readme = "README.md"
 description = "Get all pairs of states and words such that the word has no letters in common with only one state"
 
 [dependencies]
-scoped_threadpool = "0.1.6"
+scoped_threadpool = "0.1.7"
